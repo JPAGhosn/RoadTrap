@@ -92,6 +92,9 @@ class SignInView extends StatelessWidget {
                           SnackBar(content: Text(e.message!)),
                         );
                       }
+                      catch(e) {
+                        print(e);
+                      }
                     }
                   }, child: Text("Sign In"))),
                 )

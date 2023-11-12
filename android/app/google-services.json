@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "1091235665564",
+    "project_id": "roadtrap-5e34c",
+    "storage_bucket": "roadtrap-5e34c.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1091235665564:android:b1e6c6218b88c4a87bbf59",
+        "android_client_info": {
+          "package_name": "com.example.roadtrap"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1091235665564-s57v7l20u4ffcvi3ppa8h4kfm920l7tq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDz6CW3Bx4NNpUn-YYe0BbDf-RP-PJNU8Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1091235665564-s57v7l20u4ffcvi3ppa8h4kfm920l7tq.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1091235665564-0mug40sv1memehj59154tb868e5jhop8.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.roadtrap"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

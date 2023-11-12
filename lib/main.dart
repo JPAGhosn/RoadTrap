@@ -14,7 +14,7 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await FirebaseAuth.instance.useAuthEmulator('172.20.10.3', 9099);
+  await FirebaseAuth.instance.useAuthEmulator('192.168.0.107', 9099);
 
   FirebaseAuth.instance.signOut();
   final user = FirebaseAuth.instance.currentUser;
