@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  node_app:
+    build:
+      context: ../mqtt_handler
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - python_service
+      - mongo
+    environment:
+      - PYTHON_SERVICE_URL=http://localhost:5000
+      - NODE_ENV=production
+    command: npm run start
+
+  python_service:
+    build: ../decision_handler
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_RUN_PORT=5001
+    command: python app.py --host=0.0.0.0 --port=5001
+
+  mongo:
+    image: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+volumes:
+  mongo_data:
