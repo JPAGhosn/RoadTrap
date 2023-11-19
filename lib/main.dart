@@ -16,6 +16,9 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  String path = join(await getDatabasesPath(), "myDatabase.db");
+  await deleteDatabase(path);
+
   await FirebaseAuth.instance.useAuthEmulator('192.168.0.114', 9099);
 
   await DatabaseHelper.instance.database;

@@ -24,12 +24,12 @@ class _RawPageState extends State<RawPage> {
   }
 
   getTotal() async {
-    totalPages = await DatabaseHelper.instance.getTotalPages();
+    totalPages = await DatabaseHelper.instance.getPayloadTotalPages();
     await loadPayload(currentPage);
   }
 
   loadPayload(int page) async {
-    payloads = await DatabaseHelper.instance.getPatch(page: page);
+    payloads = await DatabaseHelper.instance.getPayloadPatch(page: page);
     setState(() {
     });
   }

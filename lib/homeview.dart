@@ -255,7 +255,7 @@ class _HomeViewState extends State<HomeView> {
                 child: ElevatedButton(onPressed: () async {
                   // get the number of rows collected
                   try {
-                    rowCount = await DatabaseHelper.instance.getRowCount();
+                    rowCount = await DatabaseHelper.instance.getPayloadRowCount();
                   }
                   catch(e) {
                     print(e);
@@ -328,9 +328,15 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
-  _bumpPressed(){}
-  _potholePressed(){}
-  _hazardPressed(){}
+  _bumpPressed(){
+    DatabaseHelper.instance.insertChooser("Bump");
+  }
+  _potholePressed(){
+    DatabaseHelper.instance.insertChooser("Pothole");
+  }
+  _hazardPressed(){
+    DatabaseHelper.instance.insertChooser("Hazard");
+  }
 
   button(double parentWidth, Widget icon, void Function() func) {
     double height = (parentWidth / 3) - 2 * 13 ;
@@ -578,6 +584,7 @@ class DatabaseHelper {
   static final _dbName = 'myDatabase.db';
   static final _dbVersion = 1;
   static final _tableName = 'payloads';
+  static final _tableName2 = 'choosers';
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -592,12 +599,11 @@ class DatabaseHelper {
 
   _initDatabase() async {
     String path = join(await getDatabasesPath(), _dbName);
-    // await deleteDatabase(path);
     return await openDatabase(path, version: _dbVersion, onCreate: _onCreate);
   }
 
   Future _onCreate(Database db, int version) async {
-    await db.execute('''
+    await db.execute('''    
           CREATE TABLE $_tableName (
             id INTEGER PRIMARY KEY,
             uid TEXT,
@@ -615,7 +621,15 @@ class DatabaseHelper {
             timestamp INTEGER,
             speedAccuracy REAL,
             speed REAL
-          )
+          );
+          ''');
+
+    await db.execute('''    
+    CREATE TABLE $_tableName2 (
+        id INTEGER PRIMARY KEY,
+        uid TEXT,
+        timestamp INTEGER,
+        type TEXT);
           ''');
   }
 
@@ -661,14 +675,23 @@ class DatabaseHelper {
     });
   }
 
-  getRowCount() async {
+  insertChooser(String chooser) async {
+    Database db = await instance.database;
+    return await db.insert(_tableName2, {
+      "uid": FirebaseAuth.instance.currentUser?.uid,
+      "timestamp": DateTime.now().millisecondsSinceEpoch,
+      "type": chooser
+    });
+  }
+
+  getPayloadRowCount() async {
     Database db = await instance.database;
     final List<Map<String, dynamic>> queryResult = await db.rawQuery('SELECT COUNT(*) AS count FROM payloads');
     int count = Sqflite.firstIntValue(queryResult) ?? 0;
     return count;
   }
 
-  getPatch({required int page}) async {
+  getPayloadPatch({required int page}) async {
     Database db = await instance.database;
     final List<Map<String, dynamic>> queryResult = await db.rawQuery("""
             SELECT
@@ -697,7 +720,7 @@ class DatabaseHelper {
     return queryResult;
   }
 
-  getTotalPages() async {
+  getPayloadTotalPages() async {
     Database db = await instance.database;
     final List<Map<String, dynamic>> queryResult = await db.rawQuery('SELECT COUNT(*) AS pages FROM payloads');
     int pages = ((Sqflite.firstIntValue(queryResult) ?? 0) / 20).ceil();
@@ -705,26 +728,23 @@ class DatabaseHelper {
   }
 
   sendToServer() async {
+    Database db = await instance.database;
     final dbPath = await getDatabasesPath();
     final path =  join(dbPath, _dbName);
     final file = File(path);
+    print(file.absolute);
+    // File file = File(result.files.single.path!);
+    var request = http.MultipartRequest('POST', Uri.parse("http://192.168.0.114:9433/data-sync"))
+      ..files.add(await http.MultipartFile.fromPath('file', file.path));
 
-    FilePickerResult? result = await FilePicker.platform.pickFiles();
+    var response = await request.send();
 
-    if (result != null) {
-      File file = File(result.files.single.path!);
-      var request = http.MultipartRequest('POST', Uri.parse("http://192.168.0.114:9433/data-sync"))
-        ..files.add(await http.MultipartFile.fromPath('file', file.path));
-
-      var response = await request.send();
-
-      if (response.statusCode == 200) {
-        print("File uploaded");
-      } else {
-        print("Failed to upload file");
-      }
+    if (response.statusCode == 200) {
+      print("File uploaded");
+      await db.delete(_tableName);
+      await db.delete(_tableName2);
     } else {
-      // User canceled the picker
+      print("Failed to upload file: ${response.statusCode}");
     }
 
 
