@@ -1,8 +1,10 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart';
 import 'package:roadtrap/homeview.dart';
 import 'package:roadtrap/signinview.dart';
+import 'package:sqflite/sqflite.dart';
 
 import 'firebase_options.dart';
 
@@ -14,9 +16,11 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await FirebaseAuth.instance.useAuthEmulator('192.168.0.107', 9099);
+  await FirebaseAuth.instance.useAuthEmulator('192.168.0.114', 9099);
 
-  FirebaseAuth.instance.signOut();
+  await DatabaseHelper.instance.database;
+
+  // FirebaseAuth.instance.signOut();
   final user = FirebaseAuth.instance.currentUser;
   try {
     await user?.reload();
@@ -24,6 +28,12 @@ Future<void> main() async {
   catch(e){
     FirebaseAuth.instance.signOut();
   }
+
+  // var databasesPath = await getDatabasesPath();
+  // String path = join(databasesPath, 'myDatabase.db');
+  // Database db = await openDatabase('myDatabase.db');
+  // List<Map> list = await db.query('payloads');
+  // return;
 
   runApp(
       MaterialApp(

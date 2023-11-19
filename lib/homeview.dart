@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -7,8 +10,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
+import 'package:roadtrap/analytics_page.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart';
+
 
 class HomeView extends StatefulWidget {
   @override
@@ -37,8 +45,19 @@ class _HomeViewState extends State<HomeView> {
 
   MqttServerClient? client;
 
+  DateTime? timeCollectionStarted;
+  DateTime? timeCollectionStopped;
+
   double xOffset = 0.0;
   final double dragThreshold = 100.0;
+
+  bool collectionStarted = false;
+
+  Duration diffTime = Duration();
+
+  String formattedTime = "";
+
+  int rowCount = 0;
 
   @override
   void initState() {
@@ -92,10 +111,10 @@ class _HomeViewState extends State<HomeView> {
 
     combinedSubscription = getCombinedStream()
         .throttle((_) => Stream.value(true).delay(Duration(seconds: 1)))
-        .listen((CombinedData data) {
+        .listen((CombinedData data) async {
       if (client?.connectionStatus?.state == MqttConnectionState.connected) {
         final builder = MqttClientPayloadBuilder();
-        final message = {
+        final Map<String, dynamic> message = {
           "uid": FirebaseAuth.instance.currentUser?.uid,
           "gyroscope": {
             "x": data.gyroscopeData?.x,
@@ -114,7 +133,8 @@ class _HomeViewState extends State<HomeView> {
             "altitude": data.position?.altitude,
             "altitudeAccuracy": data.position?.altitudeAccuracy,
           },
-          "timestamp": DateFormat('dd/MM/yyyy-HH:mm:ss').format(DateTime.now()),
+          // "timestamp": DateFormat('dd/MM/yyyy-HH:mm:ss').format(DateTime.now()),
+          "timestamp": DateTime.now().millisecondsSinceEpoch,
           "speedAccuracy": data.position?.speedAccuracy,
           "speed": data.position?.speed,
         };
@@ -123,7 +143,17 @@ class _HomeViewState extends State<HomeView> {
 
         builder.addString(jsonEncode(message));
 
-        client?.publishMessage('roadtrap_jp:datacollection:realtime', MqttQos.atLeastOnce, builder.payload!);
+        setState(() {
+          if(collectionStarted) {
+            diffTime = DateTime.now().difference(timeCollectionStarted!);
+          }
+        });
+
+        // TODO: client?.publishMessage('roadtrap_jp:datacollection:realtime', MqttQos.atLeastOnce, builder.payload!);
+
+        if(collectionStarted) {
+          await DatabaseHelper.instance.insertPayload(message);
+        }
       }
 
 
@@ -168,11 +198,16 @@ class _HomeViewState extends State<HomeView> {
         backgroundColor: Color(0xffF0F0F0),
         titleTextStyle: TextStyle(color: Colors.black, fontSize: 22, fontWeight: FontWeight.bold),
         actions: [
-          Icon(
-            Icons.analytics,
-            color: Colors.grey,
-            size: 35.0,
-            semanticLabel: 'Text to announce in accessibility modes',
+          GestureDetector(
+            onTap: (){
+              Navigator.of(context).push(MaterialPageRoute(builder: (context) => AnalyticsPage()));
+            },
+            child: Icon(
+              Icons.analytics,
+              color: Colors.grey,
+              size: 35.0,
+              semanticLabel: 'Text to announce in accessibility modes',
+            ),
           ),
           Padding(
             padding: const EdgeInsets.only(right: 12.0, left: 12),
@@ -213,6 +248,56 @@ class _HomeViewState extends State<HomeView> {
             _guesser,
             SizedBox(height: 13,),
             _chooser,
+            SizedBox(height: 25,),
+            SizedBox(
+                width: double.infinity,
+                height:60,
+                child: ElevatedButton(onPressed: () async {
+                  // get the number of rows collected
+                  try {
+                    rowCount = await DatabaseHelper.instance.getRowCount();
+                  }
+                  catch(e) {
+                    print(e);
+                  }
+                  setState(() {
+                    if(collectionStarted) {
+                      timeCollectionStopped = DateTime.now();
+                      // final diffTime = timeCollectionStopped!.difference(timeCollectionStarted!);
+                      setState(() {
+                        final snackBar = SnackBar(
+                          content: Text("${formattedTime} - $rowCount"),
+                          action: SnackBarAction(
+                            label: 'Ok',
+                            onPressed: () {
+                              // Code to undo the change.
+                            },
+                          ),
+                        );
+
+                        ScaffoldMessenger.of(context).showSnackBar(snackBar);
+
+                        timeCollectionStarted = null;
+                        timeCollectionStopped = null;
+                        diffTime = Duration.zero;
+                      });
+                    }
+                    else {
+                      timeCollectionStarted = DateTime.now();
+                    }
+                    collectionStarted = !collectionStarted;
+                  });
+                }, child: Text(collectionStarted ? "Stop Collection" : "Start Collection"))
+            ),
+            SizedBox(height: 13,),
+            Text((){
+              int hours = diffTime.inHours;
+              int minutes = diffTime.inMinutes % 60;
+              int seconds = diffTime.inSeconds % 60;
+
+              formattedTime = "${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}";
+              return formattedTime;
+            }())
             // ListView(
             //   children: [
             //     ListTile(title: Text('Speed: $speed')),
@@ -250,15 +335,12 @@ class _HomeViewState extends State<HomeView> {
   button(double parentWidth, Widget icon, void Function() func) {
     double height = (parentWidth / 3) - 2 * 13 ;
     return Expanded(
-      child: GestureDetector(
-        onTap: func,
-        child: DataContainer(
-            onTap: (){},
-            height: height,
-            child: Container(
-              child: icon,
-            )
-        ),
+      child: DataContainer(
+          onTap: func,
+          height: height,
+          child: Container(
+            child: icon,
+          )
       ),
     );
   }
@@ -489,6 +571,170 @@ class DataContainer extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class DatabaseHelper {
+  static final _dbName = 'myDatabase.db';
+  static final _dbVersion = 1;
+  static final _tableName = 'payloads';
+
+  DatabaseHelper._privateConstructor();
+  static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
+
+  static Database? _database;
+
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDatabase();
+    return _database!;
+  }
+
+  _initDatabase() async {
+    String path = join(await getDatabasesPath(), _dbName);
+    // await deleteDatabase(path);
+    return await openDatabase(path, version: _dbVersion, onCreate: _onCreate);
+  }
+
+  Future _onCreate(Database db, int version) async {
+    await db.execute('''
+          CREATE TABLE $_tableName (
+            id INTEGER PRIMARY KEY,
+            uid TEXT,
+            gyro_x REAL,
+            gyro_y REAL,
+            gyro_z REAL,
+            acc_x REAL,
+            acc_y REAL,
+            acc_z REAL,
+            longitude REAL,
+            latitude REAL,
+            accuracy REAL,
+            altitude REAL,
+            altitudeAccuracy REAL,
+            timestamp INTEGER,
+            speedAccuracy REAL,
+            speed REAL
+          )
+          ''');
+  }
+
+  Future<int> insert(Map<String, dynamic> row) async {
+    Database db = await instance.database;
+    return await db.insert(_tableName, row);
+  }
+
+  insertPayload(Map<String, dynamic> payload) async {
+
+    final uid = payload['uid'];
+    final gyro_x = payload['gyroscope']['x'];
+    final gyro_y = payload['gyroscope']['y'];
+    final gyro_z = payload['gyroscope']['z'];
+    final acc_x = payload['accelerometer']['x'];
+    final acc_y = payload['accelerometer']['y'];
+    final acc_z = payload['accelerometer']['z'];
+    final longitude = payload['position']['longitude'];
+    final latitude = payload['position']['latitude'];
+    final accuracy = payload['position']['accuracy'];
+    final altitude = payload['position']['altitude'];
+    final altitudeAccuracy = payload['position']['altitudeAccuracy'];
+    final timestamp = payload['timestamp'];
+    final speedAccuracy = payload['speedAccuracy'];
+    final speed = payload['speed'];
+
+    await insert({
+      "uid": uid,
+      "gyro_x": "$gyro_x",
+      "gyro_y": gyro_y,
+      "gyro_z": gyro_z,
+      "acc_x": acc_x,
+      "acc_y": acc_y,
+      "acc_z": acc_z,
+      "longitude": longitude,
+      "latitude": latitude,
+      "accuracy": accuracy,
+      "altitude": altitude,
+      "altitudeAccuracy": altitudeAccuracy,
+      "timestamp": timestamp,
+      "speedAccuracy": speedAccuracy,
+      "speed": speed
+    });
+  }
+
+  getRowCount() async {
+    Database db = await instance.database;
+    final List<Map<String, dynamic>> queryResult = await db.rawQuery('SELECT COUNT(*) AS count FROM payloads');
+    int count = Sqflite.firstIntValue(queryResult) ?? 0;
+    return count;
+  }
+
+  getPatch({required int page}) async {
+    Database db = await instance.database;
+    final List<Map<String, dynamic>> queryResult = await db.rawQuery("""
+            SELECT
+              id,
+              uid,
+              gyro_x,
+              gyro_y,
+              gyro_z,
+              acc_x,
+              acc_y,
+              acc_z,
+              longitude,
+              latitude,
+              accuracy,
+              altitude,
+              altitudeAccuracy,
+              timestamp,
+              speedAccuracy,
+              speed
+            FROM payloads 
+            ORDER BY timestamp DESC
+            limit 20
+            offset ${(page - 1 ) * 20}
+    """);
+
+    return queryResult;
+  }
+
+  getTotalPages() async {
+    Database db = await instance.database;
+    final List<Map<String, dynamic>> queryResult = await db.rawQuery('SELECT COUNT(*) AS pages FROM payloads');
+    int pages = ((Sqflite.firstIntValue(queryResult) ?? 0) / 20).ceil();
+    return pages;
+  }
+
+  sendToServer() async {
+    final dbPath = await getDatabasesPath();
+    final path =  join(dbPath, _dbName);
+    final file = File(path);
+
+    FilePickerResult? result = await FilePicker.platform.pickFiles();
+
+    if (result != null) {
+      File file = File(result.files.single.path!);
+      var request = http.MultipartRequest('POST', Uri.parse("http://192.168.0.114:9433/data-sync"))
+        ..files.add(await http.MultipartFile.fromPath('file', file.path));
+
+      var response = await request.send();
+
+      if (response.statusCode == 200) {
+        print("File uploaded");
+      } else {
+        print("Failed to upload file");
+      }
+    } else {
+      // User canceled the picker
+    }
+
+
+    // final response = await request.send();
+    //
+    // if (response.statusCode == 200) {
+    //   print('Database uploaded successfully');
+    // } else {
+    //   print('Failed to upload database');
+    // }
   }
 }
 
