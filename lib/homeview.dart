@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:http/http.dart' as http;
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -17,6 +18,11 @@ import 'package:sensors_plus/sensors_plus.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
+import 'ip.dart';
+
+
+
+
 
 class HomeView extends StatefulWidget {
   @override
@@ -27,8 +33,9 @@ class CombinedData {
   GyroscopeEvent? gyroscopeData;
   AccelerometerEvent? accelerometerData;
   Position? position;
+  CompassEvent compass;
 
-  CombinedData(this.gyroscopeData, this.accelerometerData, this.position);
+  CombinedData(this.gyroscopeData, this.accelerometerData, this.position, this.compass);
 }
 
 class _HomeViewState extends State<HomeView> {
@@ -48,6 +55,9 @@ class _HomeViewState extends State<HomeView> {
   DateTime? timeCollectionStarted;
   DateTime? timeCollectionStopped;
 
+  static AudioPlayer player = new AudioPlayer();
+
+
   double xOffset = 0.0;
   final double dragThreshold = 100.0;
 
@@ -59,35 +69,46 @@ class _HomeViewState extends State<HomeView> {
 
   int rowCount = 0;
 
+  String _type = "none";
+  String _acceptation = "neutral";
+
   @override
   void initState() {
 
-    print("!!!!!!!!!!! INITIALIZING !!!!!!!!!!");
+    // print("!!!!!!!!!!! INITIALIZING !!!!!!!!!!");
 
     client = MqttServerClient.withPort(
-        "test.mosquitto.org",
+        ip,
         "jeanpaulabighosnroadtrap",
         1883
     );
 
-    client!.logging(on: false);
+
+    // await client!.connect();
+
+    // // print(client!.connectionStatus);
+
+    // client!.connect("test.mosquitto.org");
+
+
+    // client!.logging(on: true);
     // client!.onConnected = () {
-    //   print('MQTT_LOGS:: Connected');
+    //   // print('MQTT_LOGS:: Connected');
     // };
     // client!.onDisconnected = (){
-    //   print('MQTT_LOGS:: Disconnected');
+    //   // print('MQTT_LOGS:: Disconnected');
     // };
     // client!.onUnsubscribed = (topic) {
-    //   print('MQTT_LOGS:: Subscribed topic: $topic');
+    //   // print('MQTT_LOGS:: Subscribed topic: $topic');
     // };
     // client!.onSubscribed = (topic){
-    //   print('MQTT_LOGS:: Failed to subscribe $topic');
+    //   // print('MQTT_LOGS:: Failed to subscribe $topic');
     // };
     // client!.onSubscribeFail = (topic) {
-    //   print('MQTT_LOGS:: Unsubscribed topic: $topic');
+    //   // print('MQTT_LOGS:: Unsubscribed topic: $topic');
     // };
     // client!.pongCallback = (){
-    //   print('MQTT_LOGS:: Ping response client callback invoked');
+    //   // print('MQTT_LOGS:: Ping response client callback invoked');
     // };
     client!.keepAlivePeriod = 60;
     // client!.logging(on: true);
@@ -99,23 +120,39 @@ class _HomeViewState extends State<HomeView> {
     super.initState();
   }
 
+  double lastX = 0, lastY = 0, lastZ = 0, secondLastZ = 0;
+
   init() async {
+
+    print("1");
     await Geolocator.requestPermission();
 
+    print("2");
     try {
+      print("3");
       await client!.connect();
+      print("4");
     } catch (e) {
-      print('Exception: $e');
+      // print('Exception: $e');
       client!.disconnect();
     }
 
+    print("5");
+
+    await listenNotification(client!, this.context);
+
+    print("6");
+
     combinedSubscription = getCombinedStream()
-        .throttle((_) => Stream.value(true).delay(Duration(seconds: 1)))
+        .throttle((_) => Stream.value(true).delay(Duration(milliseconds: 100 )))
         .listen((CombinedData data) async {
       if (client?.connectionStatus?.state == MqttConnectionState.connected) {
         final builder = MqttClientPayloadBuilder();
+
+
         final Map<String, dynamic> message = {
           "uid": FirebaseAuth.instance.currentUser?.uid,
+          "heading": data.compass.heading,
           "gyroscope": {
             "x": data.gyroscopeData?.x,
             "y": data.gyroscopeData?.y,
@@ -137,19 +174,26 @@ class _HomeViewState extends State<HomeView> {
           "timestamp": DateTime.now().millisecondsSinceEpoch,
           "speedAccuracy": data.position?.speedAccuracy,
           "speed": data.position?.speed,
+          "type": _type,
+          "userAcceptation": _acceptation
         };
 
-        // print(jsonEncode(message));
+        // // print(message);
+
+        _type = "none";
+        _acceptation = "neutral";
+
+        // // print(jsonEncode(message));
 
         builder.addString(jsonEncode(message));
 
         setState(() {
           if(collectionStarted) {
             diffTime = DateTime.now().difference(timeCollectionStarted!);
+            client?.publishMessage('roadtrap_jp:datacollection:realtime', MqttQos.atLeastOnce, builder.payload!);
           }
         });
 
-        // TODO: client?.publishMessage('roadtrap_jp:datacollection:realtime', MqttQos.atLeastOnce, builder.payload!);
 
         if(collectionStarted) {
           await DatabaseHelper.instance.insertPayload(message);
@@ -160,7 +204,7 @@ class _HomeViewState extends State<HomeView> {
       // Update your UI or state with the combined data
       setState(() {
         // Example:
-        speed = data.position!.speed;
+        speed = data.position!.speed * 3.6;
         gyroscopeData = data.gyroscopeData;
         accelerometerData = data.accelerometerData;
         position = data.position;
@@ -170,12 +214,14 @@ class _HomeViewState extends State<HomeView> {
     });
   }
 
+
   Stream<CombinedData> getCombinedStream() {
-    return Rx.combineLatest3<GyroscopeEvent, AccelerometerEvent, Position, CombinedData>(
+    return Rx.combineLatest4<GyroscopeEvent, AccelerometerEvent, Position, CompassEvent, CombinedData>(
         gyroscopeEvents,
         accelerometerEvents,
         Geolocator.getPositionStream(),
-            (gyroscopeData, accelerometerData, position) => CombinedData(gyroscopeData, accelerometerData, position)
+        FlutterCompass.events!,
+        (gyroscopeData, accelerometerData, position, compass) => CombinedData(gyroscopeData, accelerometerData, position, compass)
     );
   }
 
@@ -186,6 +232,44 @@ class _HomeViewState extends State<HomeView> {
     accelerometerSubscription?.cancel();
     positionSubscription?.cancel();
     super.dispose();
+  }
+
+  listenNotification(MqttClient client, BuildContext context) async {
+    print("/notifications/${FirebaseAuth.instance.currentUser?.uid}");
+    final sub = client.subscribe("/notifications/${FirebaseAuth.instance.currentUser?.uid}", MqttQos.atLeastOnce)!;
+    client.updates!.listen((event) async {
+      final message = MqttPublishPayload.bytesToStringAsString((event.last.payload as MqttPublishMessage).payload.message);
+      final json = jsonDecode(message);
+      
+      print(json);
+
+      player.stop();
+      if(json['type'] == "bump") {
+        await player.play(AssetSource("sound/Bump.mp3"));
+      }
+      else {
+        await player.play(AssetSource("sound/Pothole.mp3"));
+      }
+
+      final snackBar = SnackBar(
+        content: Text(json['type']),
+        action: SnackBarAction(
+          label: 'Ok',
+          onPressed: () {
+            // Code to undo the change.
+          },
+        ),
+      );
+
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    });
+    // client.updates?.listen((List<MqttReceivedMessage<MqttMessage>> c) {
+    //   final MqttPublishMessage message = c[0].payload as MqttPublishMessage;
+    //   final payload = MqttPublishPayload.bytesToStringAsString(message.payload.message);
+    //
+    //   // print('Received message: $payload from topic: ${c[0].topic}>');
+    // });
   }
 
   @override
@@ -258,7 +342,7 @@ class _HomeViewState extends State<HomeView> {
                     rowCount = await DatabaseHelper.instance.getPayloadRowCount();
                   }
                   catch(e) {
-                    print(e);
+                    // print(e);
                   }
                   setState(() {
                     if(collectionStarted) {
@@ -329,12 +413,15 @@ class _HomeViewState extends State<HomeView> {
   }
 
   _bumpPressed(){
+    _type = "bump";
     DatabaseHelper.instance.insertChooser("Bump");
   }
   _potholePressed(){
+    _type = "pothole";
     DatabaseHelper.instance.insertChooser("Pothole");
   }
   _hazardPressed(){
+    _type = "hazard";
     DatabaseHelper.instance.insertChooser("Hazard");
   }
 
@@ -392,10 +479,12 @@ class _HomeViewState extends State<HomeView> {
 
         if (xOffset > dragThreshold) {
           // Dragged right
-          print("right");
+          _acceptation = "accepted";
+          // print("right");
         } else if (xOffset < -dragThreshold) {
           // Dragged left
-          print("left");
+          _acceptation = "denied";
+          // print("left");
         }
 
         // Add animation to slide back to original position
@@ -500,8 +589,8 @@ class _HomeViewState extends State<HomeView> {
                       _dataItem("Altitude", "${position?.altitude.toStringAsFixed(3)}"),
                     ],
                   ),
-                  SizedBox(height: 7,),
-                  Text("Mar Elias Road", style: TextStyle(color: Color(0xff269200), fontWeight: FontWeight.bold)),
+                  // SizedBox(height: 7,),
+                  // Text("Mar Elias Road", style: TextStyle(color: Color(0xff269200), fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -732,7 +821,7 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path =  join(dbPath, _dbName);
     final file = File(path);
-    print(file.absolute);
+    // print(file.absolute);
     // File file = File(result.files.single.path!);
     var request = http.MultipartRequest('POST', Uri.parse("http://192.168.0.114:9433/data-sync"))
       ..files.add(await http.MultipartFile.fromPath('file', file.path));
@@ -740,20 +829,20 @@ class DatabaseHelper {
     var response = await request.send();
 
     if (response.statusCode == 200) {
-      print("File uploaded");
+      // print("File uploaded");
       await db.delete(_tableName);
       await db.delete(_tableName2);
     } else {
-      print("Failed to upload file: ${response.statusCode}");
+      // print("Failed to upload file: ${response.statusCode}");
     }
 
 
     // final response = await request.send();
     //
     // if (response.statusCode == 200) {
-    //   print('Database uploaded successfully');
+    //   // print('Database uploaded successfully');
     // } else {
-    //   print('Failed to upload database');
+    //   // print('Failed to upload database');
     // }
   }
 }

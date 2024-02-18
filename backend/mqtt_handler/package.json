@@ -9,7 +9,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@tensorflow/tfjs-converter": "^4.15.0",
+    "@tensorflow/tfjs-node": "^4.15.0",
     "axios": "^1.6.0",
+    "mongodb": "^6.3.0",
     "mqtt": "^5.1.2"
   }
 }

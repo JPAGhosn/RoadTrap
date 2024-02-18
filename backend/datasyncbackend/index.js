@@ -3,6 +3,7 @@ const multer = require('multer');
 const cors = require('cors');
 const sqlite3 = require('sqlite3').verbose();
 const createCsvWriter = require('csv-writer').createObjectCsvWriter;
+const pool = require('./database'); // Import the pool you configured in database.js
 
 
 const app = express();
@@ -94,6 +95,22 @@ app.post('/data-sync', upload.single('file'), (req, res) => {
   });
 
   res.status(200).send('File uploaded successfully');
+});
+
+app.post('/report', async (req, res) => {
+  const { uid, type, location } = req.body;
+
+  try {
+    const result = await pool.query(
+        'INSERT INTO reports(uid, type, longitude, latitude) VALUES($1, $2, $3, $4) RETURNING *',
+        [uid, type, location.longitude, location.latitude]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error saving data', err);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
 });
 
 const PORT = process.env.PORT || 9433;

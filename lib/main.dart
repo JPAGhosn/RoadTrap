@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart';
 import 'package:roadtrap/homeview.dart';
+import 'package:roadtrap/ip.dart';
 import 'package:roadtrap/signinview.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -19,7 +20,8 @@ Future<void> main() async {
   String path = join(await getDatabasesPath(), "myDatabase.db");
   await deleteDatabase(path);
 
-  await FirebaseAuth.instance.useAuthEmulator('192.168.0.114', 9099);
+  await FirebaseAuth.instance.useAuthEmulator(ip, 9099);
+  // await FirebaseAuth.instance.useAuthEmulator('172.20.10.4', 9099);
 
   await DatabaseHelper.instance.database;
 
@@ -40,6 +42,7 @@ Future<void> main() async {
 
   runApp(
       MaterialApp(
+        debugShowCheckedModeBanner: false,
         home: StreamBuilder<User?>(
             stream: FirebaseAuth.instance.authStateChanges(),
             builder: (context, snapshot) {

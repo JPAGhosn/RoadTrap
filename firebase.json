@@ -6,7 +6,7 @@
     },
     "ui": {
       "enabled": true,
-      "port": 4353
+      "port": 4355
     },
     "singleProjectMode": true
   }
