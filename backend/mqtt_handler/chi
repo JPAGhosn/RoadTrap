@@ -1,0 +1,20 @@
+{
+  accelero_x: number,
+  accelero_y: number,
+  accelero_z: number,
+  gyro_x: number,
+  gyro_y: number,
+  gyro_z: number,
+  longitude: number,
+  latitude: number,
+  accuracy: number,
+  altitude: number,
+  altitudeAccuracy: number,
+  speed: number,
+  speedAccuracy: number,
+  timestamp: string,
+  type: 'none' | 'bump' | 'pothole',
+  uid: string,
+  userAcceptation: boolean,
+  heading: number
+};

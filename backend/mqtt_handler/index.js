@@ -98,7 +98,6 @@ client.on('message', async function(topic, message) {
             timestamp: data.timestamp,
             type: data.type,
             uid: data.uid,
-            uid: data.uid,
             userAcceptation: data.userAcceptation,
             heading: data.heading
         };
@@ -120,7 +119,8 @@ client.on('message', async function(topic, message) {
                 const collection = mongoClient.db(DB_NAME).collection(COLLECTION);
                 const query = {
                     'location.latitude': { $gte: Math.min(latitude, newLatitude), $lte: Math.max(latitude, newLatitude) },
-                    'location.longitude': { $gte: Math.min(longitude, newLongitude), $lte: Math.max(longitude, newLongitude) }
+                    'location.longitude': { $gte: Math.min(longitude, newLongitude), $lte: Math.max(longitude, newLongitude) },
+                    'type': 'pothole'
                 };
                 return await collection.find(query).toArray();
             } catch (err) {
@@ -146,7 +146,8 @@ client.on('message', async function(topic, message) {
                 const collection = mongoClient.db(DB_NAME).collection(COLLECTION);
                 const query = {
                     'location.latitude': { $gte: Math.min(latitude, newLatitude), $lte: Math.max(latitude, newLatitude) },
-                    'location.longitude': { $gte: Math.min(longitude, newLongitude), $lte: Math.max(longitude, newLongitude) }
+                    'location.longitude': { $gte: Math.min(longitude, newLongitude), $lte: Math.max(longitude, newLongitude) },
+                    'type': 'bump'
                 };
                 return await collection.find(query).toArray();
             } catch (err) {
@@ -170,6 +171,12 @@ client.on('message', async function(topic, message) {
         if (potholes.length > 0) {
             // Send MQTT message if potholes are found
             sendMQTTNotification(potholes, newData.uid);
+        }
+
+        const bumps = await checkPotholes(newData.latitude, newData.longitude, newData.direction);
+        if (bumps.length > 0) {
+            // Send MQTT message if potholes are found
+            sendMQTTNotification(bumps, newData.uid);
         }
 
         await collection.insertOne(newData);
